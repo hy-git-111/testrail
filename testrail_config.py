@@ -16,82 +16,37 @@ def load_config():
     return _config
 
 
-def get_testrun_config():
-    """TESTRUN 섹션의 설정 반환"""
+def get_section_id_mapping(option):
+    """SECTION_ID 섹션에서 이름과 section_id 매핑 반환
+    
+    Returns:
+        dict: {이름: section_id} 형태의 딕셔너리
+        예: {"Prerequisites": 30, "Installation": 33, ...}
+    """
     config = load_config()
-    if "TESTRUN" in config:
-        return {
-            "project_id": config.getint("TESTRUN", "project_id", fallback=None),
-            "suite_id": config.getint("TESTRUN", "suite_id", fallback=None),
-            "assignedto_id": config.getint("TESTRUN", "assignedto_id", fallback=None),
-            "description": config.get("TESTRUN", "description", fallback="")
-        }
-    return {}
+    mapping = {}
+    if option in config:
+        for key in config.options(option):
+            try:
+                mapping[key] = config.getint(option, key)
+            except ValueError:
+                print(f"[Warning] 잘못된 option 형식: {key}")
+    return mapping
 
 
-def get_api_config():
-    """API 섹션의 설정 반환"""
-    config = load_config()
-    if "API" in config:
-        return {
-            "url": config.get("API", "url", fallback=""),
-            "email": config.get("API", "email", fallback=""),
-            "password": config.get("API", "password", fallback="")
-        }
-    return {}
-
-
-# 편의를 위한 함수
-def get_suite_id():
-    """Suite ID 반환"""
-    return get_testrun_config().get("suite_id")
-
-
-def get_project_id():
-    """Project ID 반환"""
-    return get_testrun_config().get("project_id")
-
-
-def get_milestone_config():
-    """MILESTONE 섹션의 설정 반환"""
-    config = load_config()
-    if "MILESTONE" in config:
-        return {
-            "name": config.get("MILESTONE", "name", fallback="")
-        }
-    return {}
-
-
-def get_filter_config():
-    """FILTER 섹션의 설정 반환"""
-    config = load_config()
-    if "FILTER" in config:
-        section_ids_str = config.get("FILTER", "section_ids", fallback="")
-        section_ids = []
-        
-        # 쉼표로 구분된 section_ids 파싱
-        if section_ids_str:
-            for id_str in section_ids_str.split(","):
-                id_str = id_str.strip()
-                if id_str:
-                    try:
-                        section_ids.append(int(id_str))
-                    except ValueError:
-                        print(f"[Warning] 잘못된 section_id 형식: {id_str}")
-        
-        return {
-            "type": config.get("FILTER", "type", fallback=""),
-            "section_ids": section_ids if section_ids else None
-        }
-    return {}
-
-
-def get_google_sheets_config():
-    """GOOGLE_SHEETS 섹션의 설정 반환"""
-    config = load_config()
-    if "GOOGLE_SHEETS" in config:
-        return {
-            "spreadsheet_id": config.get("GOOGLE_SHEETS", "spreadsheet_id", fallback="")
-        }
-    return {}
-
+def get_section_id_by_name(name, option):
+    """Section 이름으로 section_id 반환
+    
+    Args:
+        name: Section 이름 (대소문자 구분 없음)
+    
+    Returns:
+        int or None: section_id 또는 없으면 None
+    """
+    mapping = get_section_id_mapping(option)
+    # 대소문자 구분 없이 검색
+    name_lower = name.lower()
+    for key, value in mapping.items():
+        if key.lower() == name_lower:
+            return value
+    return None
