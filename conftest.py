@@ -20,9 +20,14 @@ testrail_run_id = None  # 현재 사용 중인 Run ID (마지막으로 생성된
 testrail_run_ids = {}  # 섹션별 Run ID 매핑 {section_id: run_id}
 case_id_to_section_id = {}  # 케이스 ID와 섹션 ID 매핑 {case_id: section_id}
 milestone_id = None
-suite_case_ids = []  # Suite의 케이스 ID 리스트 (순서대로)
+test_case_ids = []  # Suite의 케이스 ID 리스트 (순서대로)
 test_case_mapping = {}  # 테스트 실행 순서와 Case ID 매핑
 selected_suite_names = []  # 커맨드라인에서 선택된 suite 이름들
+
+# 섹션별 인덱스 관리를 위한 변수 추가
+suite_case_ids_by_section = {}  # {suite_name: [case_ids]}
+suite_test_index = {}  # {suite_name: 현재 인덱스}
+section_id_to_suite_name = {}  # {section_id: suite_name}
 
 
 def pytest_addoption(parser):
@@ -79,18 +84,20 @@ def get_testrail_config():
     
     --suite 옵션이 지정된 경우, 해당 이름으로 testrail.cfg의 [SECTION_ID]에서 section_id를 가져옴
     """
-    global selected_suite_names
+    global selected_suite_names, section_id_to_suite_name
     
     config = testrail_config.load_config()
     
     # section_ids 결정: --suite 옵션이 있으면 모든 이름으로 section_id 조회
     section_ids = []
+    section_id_to_suite_name = {}  # section_id와 suite_name 매핑 초기화
     
     if selected_suite_names:
         for suite_name in selected_suite_names:
             section_id = testrail_config.get_section_id_by_name(suite_name, "SECTION_ID")
             if section_id:
                 section_ids.append(section_id)
+                section_id_to_suite_name[section_id] = suite_name  # 매핑 저장
                 print(f"[TestRail] 마커 '{suite_name}'에서 section_id={section_id} 추가")
             else:
                 print(f"[Warning] 이름 '{suite_name}'에 해당하는 section_id를 찾을 수 없습니다.")
@@ -104,6 +111,7 @@ def get_testrail_config():
     }
     
     print(f"[TestRail] 설정 로드 완료: {result}")
+    print(f"[TestRail] section_id_to_suite_name: {section_id_to_suite_name}")
     return result
 
 
@@ -311,19 +319,21 @@ def create_testrail_run(case_ids, config):
 
 
 def create_test_runs(config):
-    """가져온 설정으로 Test Run 생성"""
-    global suite_case_ids, testrail_run_ids, case_id_to_section_id
+    """가져온 설정으로 Test Run 생성 - 섹션별 케이스 리스트 관리"""
+    global suite_case_ids, testrail_run_ids, case_id_to_section_id, suite_case_ids_by_section, suite_test_index
     try:
         # 1. Test Case IDs 가져오기 (Refactored logic)
         filtered_case_ids = get_filtered_case_ids(config)
         
-        # 2. Run 생성
+        # 2. Run 생성 및 섹션별 케이스 리스트 초기화
         testrail_run_ids = {}
         case_id_to_section_id = {}
+        suite_case_ids_by_section = {}  # 초기화
+        suite_test_index = {}  # 초기화
         all_case_ids = []
         
         for section_id, case_ids in filtered_case_ids.items():
-             # 각 섹션별로 Run 생성
+            # 각 섹션별로 Run 생성
             run_id = create_testrail_run(case_ids, config)
             if run_id:
                 testrail_run_ids[section_id] = run_id
@@ -332,6 +342,13 @@ def create_test_runs(config):
                 
                 for case_id in case_ids:
                     case_id_to_section_id[case_id] = section_id
+                
+                # suite_name으로 케이스 리스트 매핑 (섹션별 인덱스 관리용)
+                suite_name = section_id_to_suite_name.get(section_id)
+                if suite_name:
+                    suite_case_ids_by_section[suite_name] = case_ids
+                    suite_test_index[suite_name] = 0  # 인덱스 초기화
+                    print(f"[TestRail] suite '{suite_name}' 케이스: {case_ids}")
         
         suite_case_ids = all_case_ids
         print(f"[TestRail] 전체 필터링된 케이스 {len(suite_case_ids)}개: {suite_case_ids}")
@@ -393,13 +410,13 @@ def send_result_to_testrail(test_case_id, status, comment="", duration=0):
         print(f"[TestRail] Test case {test_case_id}: {status} 저장 완료")
     except Exception as e:
         print(f"[TestRail Error] Test case {test_case_id} 결과 전송 실패: {e}")
-
-
+        import traceback
+        traceback.print_exc()
 
 @pytest.hookimpl(tryfirst=True, hookwrapper=True)
 def pytest_runtest_makereport(item, call):
-    """각 테스트의 결과를 수집"""
-    global test_case_mapping
+    """각 테스트의 결과를 수집 - 섹션별 인덱스 기반 매핑"""
+    global test_case_mapping, suite_test_index
     outcome = yield
     rep = outcome.get_result()
     
@@ -414,10 +431,24 @@ def pytest_runtest_makereport(item, call):
         }
         test_results.append(test_result)
         
-        # Suite 케이스 순서대로 매핑
-        test_index = len(test_results) - 1  # 현재 테스트의 인덱스
-        if test_index < len(suite_case_ids):
-            case_id = suite_case_ids[test_index]
+        # 테스트의 suite 마커에서 suite 이름 가져오기
+        suite_marker = item.get_closest_marker("suite")
+        suite_name = suite_marker.args[0] if suite_marker and suite_marker.args else None
+
+        case_id = None
+        if suite_name and suite_name in suite_case_ids_by_section:
+            # 해당 섹션의 케이스 리스트
+            section_case_ids = suite_case_ids_by_section[suite_name]
+            # 해당 섹션의 현재 인덱스
+            current_index = suite_test_index.get(suite_name, 0)
+            
+            if current_index < len(section_case_ids):
+                case_id = section_case_ids[current_index]
+                print(f"[DEBUG makereport] 매핑된 case_id: {case_id}")
+                # 인덱스 증가
+                suite_test_index[suite_name] = current_index + 1
+        
+        if case_id:
             test_case_mapping[item.nodeid] = case_id
             # TestRail에 결과 전송
             send_result_to_testrail(
@@ -426,8 +457,9 @@ def pytest_runtest_makereport(item, call):
                 test_result["error_message"],
                 rep.duration
             )
+            print(f"[DEBUG makereport] send_result_to_testrail 호출 완료")
         else:
-            print(f"[Warning] 테스트 {item.nodeid}에 매핑할 케이스가 없습니다. (케이스 개수: {len(suite_case_ids)})")
+            print(f"[Warning] 테스트 {item.nodeid}에 매핑할 케이스가 없습니다. (suite: {suite_name})")
 
 def pytest_sessionstart(session):
     """테스트 세션 시작 시 Milestone 생성 및 TestRail Run 생성"""
