@@ -171,8 +171,7 @@ def get_case_type_ids(filter_name):
         filter_name_lower = filter_name.lower()
         for case_type in case_types:
             if case_type.get("name", "").lower() == filter_name_lower:
-                type_id = case_type.get("id")
-                print(f"[TestRail] '{filter_name}' → type_id: {type_id}")
+                type_id = case_type.get("id")s
                 return type_id
         
         print(f"[Warning] '{filter_name}'에 해당하는 Case Type을 찾을 수 없습니다.")
@@ -221,14 +220,27 @@ def get_filtered_case_ids(config):
 
     return filtered_case_ids_by_section
 
-def create_testrail_run(case_ids, config):
-    """필터링된 케이스로 TestRail에 테스트 런 생성"""
+def create_test_run(case_ids, config, section_name=None):
+    """필터링된 케이스로 TestRail에 테스트 런 생성
+    
+    Args:
+        case_ids: 케이스 ID 리스트
+        config: 설정 딕셔너리
+        section_name: 섹션 이름 (Run 이름에 포함됨)
+    """
     global testrail_run_id
     
     project_id = config["project_id"]
+    
+    # Run 이름 생성: section_name이 있으면 포함
+    if section_name:
+        run_name = f"{section_name} - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+    else:
+        run_name = f"Automated Test Run - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+    
     payload = {
         "suite_id": config["suite_id"],
-        "name": f"Automated Test Run - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+        "name": run_name,
         "include_all": False,
         "case_ids": case_ids
     }
@@ -237,7 +249,7 @@ def create_testrail_run(case_ids, config):
     if run_data:
         # print(f"[DEBUG] run_data: {run_data}")
         testrail_run_id = run_data.get("id")
-        print(f"[TestRail] Test Run 생성 완료: Run ID {testrail_run_id} (케이스 {len(case_ids)}개)")
+        print(f"[TestRail] Test Run 생성 완료: '{run_name}' (Run ID {testrail_run_id}, 케이스 {len(case_ids)}개)")
         return testrail_run_id
     
     return None
@@ -257,11 +269,12 @@ def create_test_runs(config):
         all_case_ids = []
         
         for section_id, case_ids in filtered_case_ids.items():
+            # 섹션 이름 가져오기
+            section_name = section_id_to_suite_name.get(section_id)
             # 각 섹션별로 Run 생성
-            run_id = create_testrail_run(case_ids, config)
+            run_id = create_test_run(case_ids, config, section_name)
             if run_id:
                 testrail_run_ids[section_id] = run_id
-                print(f"[TestRail] 섹션 {section_id}에 대한 Run 생성 완료: Run ID {run_id}")
                 all_case_ids.extend(case_ids)
                 
                 for case_id in case_ids:
