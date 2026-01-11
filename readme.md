@@ -51,26 +51,61 @@ pip install pytest-testrail
 # 전체 흐름 다이어그램
 
 ```
-pytest 실행
-  ↓
-pytest_sessionstart
-  ├─ 1. Milestone 생성/확인
-  └─ 2. get_filtered_cases()
-      ├─ 섹션 목록 가져오기
-      └─ 각 섹션별로:
-          ├─ 케이스 가져오기
-          ├─ Type 필터링
-          ├─ Case ID 배열 생성
-          └─ Run 생성 (섹션별)
-  ↓
-테스트 실행
-  ├─ 테스트 1 → TestRail 결과 저장
-  ├─ 테스트 2 → TestRail 결과 저장
-  └─ 테스트 3 → TestRail 결과 저장
-  ↓
-pytest_sessionfinish
-  ├─ 통계 출력
-  └─ Google Sheets 저장 (덮어쓰기)
+pytest --suite=Prerequisites --suite=Installation 실행
+  │
+  ├─ [conftest.py] pytest_addoption()
+  │     └─ --suite 옵션 등록
+  │
+  ├─ [conftest.py] pytest_configure()
+  │     └─ selected_suite_names 저장
+  │
+  ├─ [conftest.py] pytest_collection_modifyitems()
+  │     └─ @pytest.mark.suite 마커로 테스트 케이스 필터링
+  │
+  ├─ [conftest.py] pytest_sessionstart()
+  │     │
+  │     ├─ [testrail_client.py] get_testrail_config()
+  │     │     ├─ testrail.cfg 로드
+  │     │     └─ section_id ↔ suite_name 매핑
+  │     │
+  │     ├─ [testrail_client.py] create_milestone()
+  │     │     ├─ testrail_api("get_milestones/...")
+  │     │     └─ testrail_api("add_milestone/...", POST) (없으면 생성)
+  │     │
+  │     ├─ [testrail_client.py] create_test_runs()
+  │     │     ├─ get_filtered_case_ids()
+  │     │     │     ├─ get_case_type_ids() → type_id 조회
+  │     │     │     └─ testrail_api("get_cases/...") (섹션별)
+  │     │     │
+  │     │     └─ create_test_run() (섹션별 반복)
+  │     │           └─ testrail_api("add_run/...", POST)
+  │     │
+  │     └─ [testrail_client.py] link_runs_to_milestone()
+  │           └─ testrail_api("update_run/...", POST) (각 Run별)
+  │
+  ├─ [테스트 실행] 각 테스트마다:
+  │     │
+  │     └─ [conftest.py] pytest_runtest_makereport()
+  │           ├─ get_case_id_for_test() → 인덱스 기반 case_id 조회
+  │           └─ [testrail_client.py] send_result_to_testrail()
+  │                 └─ testrail_api("add_result_for_case/...", POST)
+  │
+  └─ [conftest.py] pytest_sessionfinish()
+        ├─ 통계 출력
+        └─ [google_sheets.py] save_results_to_google_sheets()
+              └─ get_sheet() → 구글 시트 연결 및 저장
+```
+
+## 파일 구조
+```
+testrail/
+├── conftest.py          # Pytest hook 함수 (진입점)
+├── testrail_client.py   # TestRail API 함수
+├── google_sheets.py     # Google Sheets 함수
+├── testrail_config.py   # 설정 파일 로드
+├── testrail.cfg         # 설정 값
+├── data.py              # API 키, URL 등 민감정보
+└── test_example.py      # 테스트 코드
 ```
 
 5. 실행 방법
