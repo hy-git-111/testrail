@@ -39,14 +39,12 @@ def pytest_addoption(parser):
         help="실행할 Suite 이름 (여러 개 지정 가능, 예: --suite=Prerequisites --suite=Installation)"
     )
 
-
 def pytest_configure(config):
     """pytest 설정 시 선택된 suite 이름 저장"""
     global selected_suite_names
     selected_suite_names = config.getoption("--suite", [])
     if selected_suite_names:
         print(f"[TestRail] 선택된 Suite: {selected_suite_names}")
-
 
 def pytest_collection_modifyitems(config, items):
     """테스트 수집 후 suite 마커로 필터링"""
@@ -132,65 +130,28 @@ def create_milestone(config):
         print("[TestRail] milestone_name이 비어있어서 Milestone 생성을 건너뜁니다.")
         return None
     
-    try:
-        # 1. TestRail API로 마일스톤 목록 조회
-        url = f"{TESTRAIL_URL}/index.php?/api/v2/get_milestones/{project_id}"
-        response = requests.get(url, auth=(TESTRAIL_USER, TESTRAIL_API_KEY))
-        response.raise_for_status()
-        milestones_data = response.json()
-        
+    # 1. TestRail API로 마일스톤 목록 조회
+    milestones_data = testrail_api(f"get_milestones/{project_id}")
+    if milestones_data:
         # milestones 리스트에서 name으로 기존 마일스톤 찾기
         for ms in milestones_data.get("milestones", []):
             if ms.get("name") == milestone_name:
                 milestone_id = ms.get("id")
                 print(f"[TestRail] 기존 Milestone 발견: '{milestone_name}' (ID: {milestone_id}) - 생성 생략")
                 return milestone_id
-        
-        # 3. 없으면 새로 생성
-        url = f"{TESTRAIL_URL}/index.php?/api/v2/add_milestone/{project_id}"
-        payload = {"name": milestone_name}
-        response = requests.post(
-            url,
-            json=payload,
-            auth=(TESTRAIL_USER, TESTRAIL_API_KEY),
-            headers={"Content-Type": "application/json"}
-        )
-        response.raise_for_status()
-        milestone_data = response.json()
+    
+    # 2. 없으면 새로 생성
+    milestone_data = testrail_api(
+        f"add_milestone/{project_id}",
+        method="POST",
+        payload={"name": milestone_name}
+    )
+    if milestone_data:
         milestone_id = milestone_data.get("id")
         print(f"[TestRail] Milestone 생성 완료: '{milestone_name}' (ID: {milestone_id})")
         return milestone_id
-        
-    except Exception as e:
-        print(f"[TestRail Error] Milestone 검색/생성 실패: {e}")
-        return None
-
-# def get_sections(project_id, suite_id):
-#     """Suite의 모든 섹션(폴더) 목록 가져오기"""
-#     try:
-#         url = f"{TESTRAIL_URL}/index.php?/api/v2/get_sections/{project_id}"
-#         params = {
-#             "suite_id": suite_id
-#         }
-#         response = requests.get(url, params=params, auth=(TESTRAIL_USER, TESTRAIL_API_KEY))
-#         response.raise_for_status()
-#         sections = response.json()
-#         print(f"[TestRail] 섹션 가져오기 응답: {sections}")
-        
-#         # sections가 dict로 래핑된 경우 처리
-#         if isinstance(sections, dict):
-#             sections = sections.get("sections", [])
-#         elif not isinstance(sections, list):
-#             print(f"[Warning] Sections 응답 형식이 예상과 다릅니다: {type(sections)}")
-#             sections = []
-        
-#         print(f"[TestRail] 섹션 {len(sections)}개 발견")
-#         print(f"[TestRail] 섹션 목록: {sections}")
-#         return sections
-#     except Exception as e:
-#         print(f"[TestRail Error] 섹션 가져오기 실패: {e}")
-#         return []
-
+    
+    return None
 
 def get_case_type_ids(filter_name):
     """TestRail API에서 filter_name과 일치하는 Case Type의 id 반환
@@ -203,13 +164,9 @@ def get_case_type_ids(filter_name):
     """
     if not filter_name:
         return None
-        
-    try:
-        url = f"{TESTRAIL_URL}/index.php?/api/v2/get_case_types"
-        response = requests.get(url, auth=(TESTRAIL_USER, TESTRAIL_API_KEY))
-        response.raise_for_status()
-        case_types = response.json()
-        
+    
+    case_types = testrail_api("get_case_types")
+    if case_types:
         # filter_name과 일치하는 type_id 찾기 (대소문자 구분 없이)
         filter_name_lower = filter_name.lower()
         for case_type in case_types:
@@ -219,11 +176,7 @@ def get_case_type_ids(filter_name):
                 return type_id
         
         print(f"[Warning] '{filter_name}'에 해당하는 Case Type을 찾을 수 없습니다.")
-        return None
-        
-    except Exception as e:
-        print(f"[TestRail Error] Case Type 가져오기 실패: {e}")
-        return None
+    return None
 
 
 def get_filtered_case_ids(config):
@@ -231,92 +184,63 @@ def get_filtered_case_ids(config):
     
     config["section_ids"]가 있으면 해당 섹션들의 케이스만 가져옴
     """
-    try:
-        project_id = config["project_id"]
-        section_ids = config.get("section_ids", [])
-        filter_name = config.get("filter_name", "")
+    project_id = config["project_id"]
+    section_ids = config.get("section_ids", [])
+    filter_name = config.get("filter_name", "")
 
-        if not section_ids:
-            print("[TestRail] section_ids가 없습니다.")
-            return {}
-
-        # 각 섹션별로 케이스 가져오기 및 Type 필터링
-        filtered_case_ids_by_section = {}  # {section_id: [case_ids]}
-        allowed_type_id = get_case_type_ids(filter_name)  # TestRail API에서 name→id 변환
-        print(f"[TestRail] filter_name: {filter_name}, type_id: {allowed_type_id}")
-        
-        for section_id in section_ids:
-            url = f"{TESTRAIL_URL}/index.php?/api/v2/get_cases/{project_id}"
-            params = {"section_id": section_id}
-            response = requests.get(url, params=params, auth=(TESTRAIL_USER, TESTRAIL_API_KEY))
-            response.raise_for_status()
-            cases_data = response.json()
-            
-            # cases가 dict로 래핑된 경우 처리
-            cases = cases_data.get("cases", []) if isinstance(cases_data, dict) else cases_data
-
-            section_case_ids = []
-            for case in cases:
-                # filter_name이 있으면 Type 필터링
-                if allowed_type_id is not None:
-                    case_type_id = case.get("type_id")
-                    if case_type_id == allowed_type_id:  # == 비교로 변경
-                        section_case_ids.append(case.get("id"))
-                else:
-                    section_case_ids.append(case.get("id"))
-            
-            if section_case_ids:
-                filtered_case_ids_by_section[section_id] = section_case_ids
-                print(f"[TestRail] 섹션 {section_id}: {section_case_ids} 케이스 선택됨")
-
-        return filtered_case_ids_by_section
-
-    except Exception as e:
-        print(f"[TestRail Error] Case IDs 가져오기 실패: {e}")
+    if not section_ids:
+        print("[TestRail] section_ids가 없습니다.")
         return {}
+
+    # 각 섹션별로 케이스 가져오기 및 Type 필터링
+    filtered_case_ids_by_section = {}  # {section_id: [case_ids]}
+    allowed_type_id = get_case_type_ids(filter_name)  # TestRail API에서 name→id 변환
+    print(f"[TestRail] filter_name: {filter_name}, type_id: {allowed_type_id}")
+    
+    for section_id in section_ids:
+        cases_data = testrail_api(f"get_cases/{project_id}", params={"section_id": section_id})
+        if not cases_data:
+            continue
+        
+        # cases가 dict로 래핑된 경우 처리
+        cases = cases_data.get("cases", []) if isinstance(cases_data, dict) else cases_data
+
+        section_case_ids = []
+        for case in cases:
+            # filter_name이 있으면 Type 필터링
+            if allowed_type_id is not None:
+                case_type_id = case.get("type_id")
+                if case_type_id == allowed_type_id:
+                    section_case_ids.append(case.get("id"))
+            else:
+                section_case_ids.append(case.get("id"))
+        
+        if section_case_ids:
+            filtered_case_ids_by_section[section_id] = section_case_ids
+            print(f"[TestRail] 섹션 {section_id}: {section_case_ids} 케이스 선택됨")
+
+    return filtered_case_ids_by_section
 
 def create_testrail_run(case_ids, config):
     """필터링된 케이스로 TestRail에 테스트 런 생성"""
     global testrail_run_id
-    try:
-        project_id = config["project_id"]
-        section_ids = config["section_ids"]
-        print(section_ids)
-        
-        # if not case_ids:
-        #     print("[TestRail] 필터링된 케이스가 없습니다.")
-        #     return None
-
-        url = f"{TESTRAIL_URL}/index.php?/api/v2/add_run/{project_id}"
-        
-        payload = {
-            "suite_id": config["suite_id"],
-            "name": f"Automated Test Run - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-            # "description": config.get("description", "Automated test execution"),
-            # "assignedto_id": config.get("assignedto_id"),
-            "include_all": False,
-            "case_ids": case_ids
-        }
-        
-        # if milestone_id:
-        #     payload["milestone_id"] = milestone_id
-        # print(f"[DEBUG] payload: {payload["milestone_id"]}")
-        response = requests.post(
-            url,
-            json=payload,
-            auth=(TESTRAIL_USER, TESTRAIL_API_KEY),
-            headers={"Content-Type": "application/json"}
-        )
-        response.raise_for_status()
-        run_data = response.json()
+    
+    project_id = config["project_id"]
+    payload = {
+        "suite_id": config["suite_id"],
+        "name": f"Automated Test Run - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+        "include_all": False,
+        "case_ids": case_ids
+    }
+    
+    run_data = testrail_api(f"add_run/{project_id}", method="POST", payload=payload)
+    if run_data:
         print(f"[DEBUG] run_data: {run_data}")
         testrail_run_id = run_data.get("id")
         print(f"[TestRail] Test Run 생성 완료: Run ID {testrail_run_id} (케이스 {len(case_ids)}개)")
         return testrail_run_id
-    except Exception as e:
-        print(f"[TestRail Error] Run 생성 실패: {e}")
-        return None
-
+    
+    return None
 
 def create_test_runs(config):
     """가져온 설정으로 Test Run 생성 - 섹션별 케이스 리스트 관리"""
@@ -382,36 +306,26 @@ def send_result_to_testrail(test_case_id, status, comment="", duration=0):
         print(f"[TestRail Error] Run ID가 없어 결과를 전송할 수 없습니다. (Test Case: {test_case_id})")
         return
     
-    try:
-        url = f"{TESTRAIL_URL}/index.php?/api/v2/add_result_for_case/{run_id}/{test_case_id}"
-        
-        # status_id: 1=Passed, 2=Blocked, 3=Untested, 4=Retest, 5=Failed
-        status_map = {
-            "passed": 1,
-            "failed": 5,
-            "skipped": 2,
-            "blocked": 2
-        }
-        status_id = status_map.get(status, 3)
-        
-        payload = {
-            "status_id": status_id,
-            "comment": comment[:255] if comment else "",  # TestRail comment 길이 제한
-            "elapsed": f"{int(duration)}s" if duration else None
-        }
-        
-        response = requests.post(
-            url,
-            json=payload,
-            auth=(TESTRAIL_USER, TESTRAIL_API_KEY),
-            headers={"Content-Type": "application/json"}
-        )
-        response.raise_for_status()
+    # status_id: 1=Passed, 2=Blocked, 3=Untested, 4=Retest, 5=Failed
+    status_map = {
+        "passed": 1,
+        "failed": 5,
+        "skipped": 2,
+        "blocked": 2
+    }
+    status_id = status_map.get(status, 3)
+    
+    payload = {
+        "status_id": status_id,
+        "comment": comment[:255] if comment else "",  # TestRail comment 길이 제한
+        "elapsed": f"{int(duration)}s" if duration else None
+    }
+    
+    result = testrail_api(f"add_result_for_case/{run_id}/{test_case_id}", method="POST", payload=payload)
+    if result:
         print(f"[TestRail] Test case {test_case_id}: {status} 저장 완료")
-    except Exception as e:
-        print(f"[TestRail Error] Test case {test_case_id} 결과 전송 실패: {e}")
-        import traceback
-        traceback.print_exc()
+    else:
+        print(f"[TestRail Error] Test case {test_case_id} 결과 전송 실패")
 
 @pytest.hookimpl(tryfirst=True, hookwrapper=True)
 def pytest_runtest_makereport(item, call):
@@ -499,7 +413,6 @@ def pytest_sessionfinish(session, exitstatus):
     else:
         print("\n[Session Finish] 실행된 테스트가 없습니다.")
 
-
 def save_results_to_google_sheets(results):
     """구글 시트에 테스트 결과 저장 (덮어쓰기)"""
     try:
@@ -525,24 +438,38 @@ def save_results_to_google_sheets(results):
     except Exception as e:
         print(f"[Google Sheets Error] {e}")
 
-
-def debug_testrail_api(endpoint, params=None):
-    """TestRail API 디버깅용 함수 - 응답을 확인할 수 있음
+def testrail_api(endpoint, method="GET", params=None, payload=None):
+    """TestRail API 공통 호출 함수
     
     Args:
-        endpoint: API 엔드포인트 (예: "get_milestones/3", "get_sections/3")
-        params: 쿼리 파라미터 (dict)
+        endpoint: API 엔드포인트 (예: "get_milestones/3", "add_run/3")
+        method: "GET" 또는 "POST"
+        params: GET 쿼리 파라미터 (dict)
+        payload: POST body (dict)
     
     Returns:
-        dict: API 응답
+        dict: API 응답 (성공 시) 또는 None (실패 시)
     """
     try:
         url = f"{TESTRAIL_URL}/index.php?/api/v2/{endpoint}"
-        response = requests.get(url, params=params, auth=(TESTRAIL_USER, TESTRAIL_API_KEY))
+        
+        if method.upper() == "POST":
+            response = requests.post(
+                url,
+                json=payload,
+                auth=(TESTRAIL_USER, TESTRAIL_API_KEY),
+                headers={"Content-Type": "application/json"}
+            )
+        else:
+            response = requests.get(
+                url,
+                params=params,
+                auth=(TESTRAIL_USER, TESTRAIL_API_KEY)
+            )
+        
         response.raise_for_status()
-        result = response.json()
-        print(f"[DEBUG] API 응답 ({endpoint}): {result}")
-        return result
+        return response.json()
     except Exception as e:
-        print(f"[DEBUG Error] API 호출 실패 ({endpoint}): {e}")
+        print(f"[TestRail Error] API 호출 실패 ({method} {endpoint}): {e}")
         return None
+
