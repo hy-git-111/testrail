@@ -14,14 +14,18 @@ Python 스크립트: 둘 다 붙어서 데이터 한 줄 써보기
 1. Google Sheets API 설정  
 사전 조건 : 구글 2단계 인증 설정
 
-    - 구글 클라우드 콘솔 진입(https://console.cloud.google.com/)
-    - 좌측 내비게이션 메뉴 > API&Services
+    - 구글 클라우드 콘솔(https://console.cloud.google.com/) > 좌측 내비게이션 메뉴 > IAM & Admin > Service Accounts
     - API Library > 'google sheets api' 검색
     - Google Sheets API > Manage > Credentials > +Create credentials 버튼 > API Keys, Service Accounts 생성
 
+2. Service Account 설정
+    - 구글 클라우드 콘솔(https://console.cloud.google.com/) > 좌측 내비게이션 메뉴 > IAM & Admin > Service Accounts
+    - +Create Service Account 버튼 > Service Account Name 입력 > Create
+    - 생성된 Service Account > Keys > +Add Key > Create New Key > JSON > Create
+    - 생성된 JSON 파일을 프로젝트 폴더에 복사
     - 구글 시트 > 생성한 계정에 공유해주기
 
-2. 파이썬 환경설정
+3. 파이썬 환경설정
 pip install gspread google-auth requests
 
 ## TestRail 연동
@@ -68,3 +72,12 @@ pytest_sessionfinish
   ├─ 통계 출력
   └─ Google Sheets 저장 (덮어쓰기)
 ```
+
+5. 실행 방법
+  ```
+  # 특정 suite만 실행
+  pytest -m "suite"  # suite 마커가 있는 모든 테스트
+  pytest -k "Prerequisites"  # 특정 suite 이름으로 필터링
+  # 또는 커스텀 옵션 추가 가능
+  pytest --suite=Prerequisites
+  ```
