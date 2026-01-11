@@ -13,66 +13,42 @@ Suite 마커 사용법:
 
 @pytest.mark.suite("Prerequisites")
 def test_cypress_scenario_1():
-    try:
-        """통과하는 테스트 예제"""
-        time.sleep(2)  # 테스트 실행 시간 시뮬레이션
-        assert 1 + 1 == 2
-
-    except Exception as e:
-        print(e)
+    """통과하는 테스트 예제"""
+    time.sleep(2)  # 테스트 실행 시간 시뮬레이션
+    assert 1 + 1 == 2
 
 
 @pytest.mark.suite("Prerequisites")
 def test_pytest_scenario_2():
-    try:
-        """실패하는 테스트 예제"""
-        time.sleep(2)
-        assert 1 + 1 == 3, "의도적인 실패 테스트"
-
-    except Exception as e:
-        print(e)
+    """실패하는 테스트 예제"""
+    time.sleep(2)
+    assert 1 + 1 == 3, "의도적인 실패 테스트"
 
 
 @pytest.mark.suite("Installation")
 def test_pytest_scenario_3():
-    try:
-        """또 다른 테스트 예제"""
-        time.sleep(2)        
-        assert "hello" == "hello"
-        
-    except Exception as e:
-        print(e)
+    """통과하는 테스트 예제"""
+    time.sleep(2)        
+    assert "hello" == "hello"
 
 
 @pytest.mark.suite("Updates")
 def test_pytest_scenario_4():
-    try:
-        """또 다른 테스트 예제"""
-        assert "hello" == "hello"
-        time.sleep(2)
-        
-    except Exception as e:
-        print(e)
+    """통과하는 테스트 예제"""
+    time.sleep(2)
+    assert "hello" == "hello"
 
 
-@pytest.mark.suite("Updates")
+@pytest.mark.suite("Feature2")
 def test_pytest_scenario_5():
-    try:
-        """또 다른 테스트 예제"""
-        assert "hello" == "hello"
-        time.sleep(2)
-        
-    except Exception as e:
-        print(e)
+    """통과하는 테스트 예제"""
+    time.sleep(3)
+    assert "hello" == "hello"
 
 
-@pytest.mark.suite("Tutorial")
+@pytest.mark.suite("Search")
 def test_pytest_scenario_6():
-    try:
-        """또 다른 테스트 예제"""
-        assert "hello" == "hello"
-        time.sleep(2)
-        
-    except Exception as e:
-        print(e)
+    """통과하는 테스트 예제"""
+    time.sleep(2)
+    assert "hello" == "hello"
 
