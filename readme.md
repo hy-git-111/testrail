@@ -92,7 +92,7 @@ pytest --suite=Prerequisites --suite=Installation 실행
   │
   └─ [conftest.py] pytest_sessionfinish()
         ├─ 통계 출력
-        └─ [google_sheets.py] save_results_to_google_sheets()
+        └─ [google_sheets.py] save_summary_sheets()
               └─ get_sheet() → 구글 시트 연결 및 저장
 ```
 

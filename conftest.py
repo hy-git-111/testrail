@@ -91,18 +91,19 @@ def pytest_runtest_makereport(item, call):
     
     # 테스트 결과 정보 수집
     if rep.when == "call":  # 테스트 실행 단계만 수집
+        # 테스트의 suite 마커에서 suite 이름 가져오기
+        suite_marker = item.get_closest_marker("suite")
+        suite_name = suite_marker.args[0] if suite_marker and suite_marker.args else None
+        
         test_result = {
             "test_name": item.nodeid,
+            "suite_name": suite_name,  # 섹션별 통계용
             "status": rep.outcome,  # passed, failed, skipped
             "duration": round(rep.duration, 2),
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "error_message": str(rep.longrepr) if rep.failed else ""
         }
         test_results.append(test_result)
-        
-        # 테스트의 suite 마커에서 suite 이름 가져오기
-        suite_marker = item.get_closest_marker("suite")
-        suite_name = suite_marker.args[0] if suite_marker and suite_marker.args else None
 
         # testrail_client 모듈에서 case_id 가져오기
         case_id = testrail_client.get_case_id_for_test(suite_name)
@@ -126,11 +127,49 @@ def pytest_sessionfinish(session, exitstatus):
     """모든 테스트 완료 후 결과를 Google Sheets에 저장"""
     if test_results:
         print(f"\n[Session Finish] 총 {len(test_results)}개 테스트 실행 완료")
-        print(f"  - Passed: {sum(1 for r in test_results if r['status'] == 'passed')}")
-        print(f"  - Failed: {sum(1 for r in test_results if r['status'] == 'failed')}")
-        print(f"  - Skipped: {sum(1 for r in test_results if r['status'] == 'skipped')}")
-        google_sheets.save_results_to_google_sheets(test_results)
+        
+        # 통계 계산
+        passed_count = sum(1 for r in test_results if r['status'] == 'passed')
+        failed_count = sum(1 for r in test_results if r['status'] == 'failed')
+        skipped_count = sum(1 for r in test_results if r['status'] == 'skipped')
+        
+        print(f"  - Passed: {passed_count}")
+        print(f"  - Failed: {failed_count}")
+        print(f"  - Skipped: {skipped_count}")
+        
+        # 섹션별 통계 계산
+        section_stats = {}
+        total_duration = 0
+        
+        for result in test_results:
+            suite_name = result.get("suite_name")
+            duration = result.get("duration", 0)
+            status = result.get("status")
+            
+            total_duration += duration
+            
+            if suite_name:
+                if suite_name not in section_stats:
+                    section_stats[suite_name] = {"duration": 0, "failed": 0}
+                section_stats[suite_name]["duration"] += duration
+                if status == "failed":
+                    section_stats[suite_name]["failed"] += 1
+        
+        # milestone_name 가져오기
+        import testrail_config
+        config = testrail_config.load_config()
+        milestone_name = config.get("MILESTONE", "milestone_name", fallback="Unknown")
+        
+        # Google Sheets에 저장
+        google_sheets.save_summary_sheets(
+            milestone_name,
+            section_stats,
+            total_duration,
+            failed_count
+        )
+        
         if testrail_client.testrail_run_id:
             print(f"[TestRail] Run ID {testrail_client.testrail_run_id}에 결과 저장 완료")
     else:
         print("\n[Session Finish] 실행된 테스트가 없습니다.")
+
