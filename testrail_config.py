@@ -10,6 +10,7 @@ def load_config():
     global _config
     if _config is None:
         _config = configparser.ConfigParser()
+        _config.optionxform = str  # 대소문자 유지
         config_path = os.path.join(os.path.dirname(__file__), "testrail.cfg")
         if os.path.exists(config_path):
             _config.read(config_path, encoding="utf-8")
@@ -50,3 +51,18 @@ def get_section_id_by_name(name, option):
         if key.lower() == name_lower:
             return value
     return None
+
+
+def get_all_section_names(option="SECTION_ID"):
+    """testrail.cfg의 [SECTION_ID]에서 모든 섹션 이름 반환
+    
+    Returns:
+        list: 섹션 이름 리스트 (예: ["Prerequisites", "Installation", ...])
+    """
+    mapping = get_section_id_mapping(option)
+    # 원래 대소문자 유지를 위해 config에서 직접 가져옴
+    config = load_config()
+    if option in config:
+        return [key for key in config.options(option)]
+    return []
+

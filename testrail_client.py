@@ -63,7 +63,7 @@ def get_testrail_config(selected_suite_names):
     """설정 파일에서 필요한 값 가져오기
     
     Args:
-        selected_suite_names: 선택된 suite 이름 리스트
+        selected_suite_names: 선택된 suite 이름 리스트 (비어있으면 모든 섹션 사용)
     
     Returns:
         dict: 설정 값 딕셔너리
@@ -72,19 +72,23 @@ def get_testrail_config(selected_suite_names):
     
     config = testrail_config.load_config()
     
-    # section_ids 결정: --suite 옵션이 있으면 모든 이름으로 section_id 조회
+    # --suite 옵션이 없으면 testrail.cfg의 모든 섹션 사용
+    if not selected_suite_names:
+        selected_suite_names = testrail_config.get_all_section_names()
+        print(f"[TestRail] --suite 옵션 없음, 모든 섹션 사용: {selected_suite_names}")
+    
+    # section_ids 결정
     section_ids = []
     section_id_to_suite_name = {}  # section_id와 suite_name 매핑 초기화
     
-    if selected_suite_names:
-        for suite_name in selected_suite_names:
-            section_id = testrail_config.get_section_id_by_name(suite_name, "SECTION_ID")
-            if section_id:
-                section_ids.append(section_id)
-                section_id_to_suite_name[section_id] = suite_name  # 매핑 저장
-                print(f"[TestRail] 마커 '{suite_name}'에서 section_id={section_id} 추가")
-            else:
-                print(f"[Warning] 이름 '{suite_name}'에 해당하는 section_id를 찾을 수 없습니다.")
+    for suite_name in selected_suite_names:
+        section_id = testrail_config.get_section_id_by_name(suite_name, "SECTION_ID")
+        if section_id:
+            section_ids.append(section_id)
+            section_id_to_suite_name[section_id] = suite_name  # 매핑 저장
+            print(f"[TestRail] 마커 '{suite_name}'에서 section_id={section_id} 추가")
+        else:
+            print(f"[Warning] 이름 '{suite_name}'에 해당하는 section_id를 찾을 수 없습니다.")
     
     result = {
         "project_id": config.getint("PROJECT", "project_id", fallback=None),

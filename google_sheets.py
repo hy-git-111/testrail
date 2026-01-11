@@ -63,9 +63,9 @@ def save_summary_sheets(milestone_name, section_stats, total_duration, total_fai
         all_values = sheet.get_all_values()
         
         if not all_values:
-            # 시트가 비어있으면 헤더 생성
+            # 시트가 비어있으면 헤더 생성 (A1부터 명시적으로)
             header = ["milestone_name"] + section_names + ["total", "fail건 수"]
-            sheet.append_row(header)
+            sheet.update(range_name='A1', values=[header])
             all_values = [header]
         
         # 기존 헤더 확인
@@ -83,7 +83,7 @@ def save_summary_sheets(milestone_name, section_stats, total_duration, total_fai
             # 기존 섹션 + 새 섹션 (순서 유지)
             all_sections = existing_sections + new_sections
             new_header = ["milestone_name"] + all_sections + ["total", "fail건 수"]
-            sheet.update('A1', [new_header])
+            sheet.update(range_name='A1', values=[new_header])
             
             # 기존 데이터 행들도 열 확장 (새 섹션 위치에 빈 값 삽입)
             for i, row in enumerate(all_values[1:], start=2):
@@ -99,7 +99,7 @@ def save_summary_sheets(milestone_name, section_stats, total_duration, total_fai
                     section_vals.extend([""] * len(new_sections))
                     
                     new_row = [row[0]] + section_vals + [total_val, fail_val]
-                    sheet.update(f'A{i}', [new_row])
+                    sheet.update(range_name=f'A{i}', values=[new_row])
             
             existing_sections = all_sections
         
@@ -123,11 +123,12 @@ def save_summary_sheets(milestone_name, section_stats, total_duration, total_fai
         
         if milestone_row_index:
             # 기존 행 업데이트
-            sheet.update(f'A{milestone_row_index}', [row_data])
+            sheet.update(range_name=f'A{milestone_row_index}', values=[row_data])
             print(f"[Google Sheets] milestone '{milestone_name}' 업데이트 완료")
         else:
-            # 새 행 추가
-            sheet.append_row(row_data)
+            # 새 행 추가 (A열부터 명시적으로)
+            next_row = len(all_values) + 1
+            sheet.update(range_name=f'A{next_row}', values=[row_data])
             print(f"[Google Sheets] milestone '{milestone_name}' 추가 완료")
         
     except Exception as e:
