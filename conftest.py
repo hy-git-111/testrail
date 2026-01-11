@@ -235,7 +235,7 @@ def create_testrail_run(case_ids, config):
     
     run_data = testrail_api(f"add_run/{project_id}", method="POST", payload=payload)
     if run_data:
-        print(f"[DEBUG] run_data: {run_data}")
+        # print(f"[DEBUG] run_data: {run_data}")
         testrail_run_id = run_data.get("id")
         print(f"[TestRail] Test Run 생성 완료: Run ID {testrail_run_id} (케이스 {len(case_ids)}개)")
         return testrail_run_id
@@ -280,6 +280,40 @@ def create_test_runs(config):
     except Exception as e:
         print(f"[TestRail Error] Test Run 생성 실패: {e}")
         return []
+
+
+def link_runs_to_milestone():
+    """생성된 Test Run들을 Milestone에 연결
+
+    사용 예:
+        pytest_sessionstart()에서 create_test_runs() 이후에 호출
+        또는 테스트 완료 후 pytest_sessionfinish()에서 호출
+    """
+    global milestone_id, testrail_run_ids
+    
+    if not milestone_id:
+        print("[TestRail] Milestone ID가 없어서 Run 연결을 건너뜁니다.")
+        return False
+    
+    if not testrail_run_ids:
+        print("[TestRail] 연결할 Test Run이 없습니다.")
+        return False
+    
+    success_count = 0
+    for section_id, run_id in testrail_run_ids.items():
+        result = testrail_api(
+            f"update_run/{run_id}",
+            method="POST",
+            payload={"milestone_id": milestone_id}
+        )
+        if result:
+            print(f"[TestRail] Run {run_id} → Milestone {milestone_id} 연결 완료")
+            success_count += 1
+        else:
+            print(f"[TestRail Error] Run {run_id} → Milestone 연결 실패")
+    
+    print(f"[TestRail] 총 {success_count}/{len(testrail_run_ids)}개 Run이 Milestone에 연결됨")
+    return success_count == len(testrail_run_ids)
 
 def send_result_to_testrail(test_case_id, status, comment="", duration=0):
     """TestRail에 테스트 결과 전송"""
@@ -388,6 +422,9 @@ def pytest_sessionstart(session):
     
     # 3. Test Run 생성
     create_test_runs(config)
+
+    # 4. Test Run 연결
+    link_runs_to_milestone()
 
 def get_sheet():
     """구글 시트 연결 함수"""
